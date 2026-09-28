@@ -24,17 +24,22 @@
 
 拉取后脚本目录中会出现上述两个文件。
 
-### 2. 创建检查定时任务
+### 2. 定时任务（拉取时自动创建）
 
-定时任务 → 新建任务：
+开启「自动添加定时任务」时，首次拉取会自动创建两个任务：
 
-- 名称：`京东Cookie检查`
-- 命令：`task jd_cookie_check.py`
-- 定时规则：`0 0 9 * * *`（每天 9:00）
+| 任务 | 命令 | 处理方式 |
+|---|---|---|
+| `jd_cookie_check.py` | `task 908468180_qinglong-JDLogin_main/jd_cookie_check.py` | **保留**，默认每天 06:06 检查 |
+| `jd_browser_login.py` | `task 908468180_qinglong-JDLogin_main/jd_browser_login.py` | **停用**（青龙容器无浏览器，只能在电脑上运行；保留任务可防止下次拉取被重复添加） |
+
+如未自动创建，也可手动新建：命令 `task 908468180_qinglong-JDLogin_main/jd_cookie_check.py`，
+定时规则 `0 0 9 * * *`（每天 9:00）。
 
 ### 3. 电脑端登录（获取 / 续期 Cookie）
 
-青龙容器无图形界面，登录脚本需在 Windows 电脑上运行：
+青龙容器无图形界面，登录脚本需在 Windows 电脑上运行（先从本仓库下载
+`jd_browser_login.py`）：
 
 ```powershell
 pip install playwright
