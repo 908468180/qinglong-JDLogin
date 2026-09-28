@@ -118,17 +118,28 @@ def main():
     if not require_config():
         return 2
 
-    from playwright.sync_api import sync_playwright
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("[!] 未安装 playwright（pip install playwright）。")
+        print("[!] 本脚本需在 Windows 电脑上运行；青龙容器内没有浏览器，")
+        print("[!] 请勿在青龙中运行此脚本，容器内请使用 jd_cookie_check.py。")
+        return 3
 
     print("[*] 启动 Edge（手机视图）... 打开 https://m.jd.com")
     print("[*] profile: %s" % PROFILE)
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            PROFILE, channel="msedge", headless=False,
-            viewport={"width": 414, "height": 896}, user_agent=UA_M,
-            is_mobile=True, has_touch=True, locale="zh-CN",
-            device_scale_factor=3,
-            args=["--disable-blink-features=AutomationControlled"])
+        try:
+            ctx = p.chromium.launch_persistent_context(
+                PROFILE, channel="msedge", headless=False,
+                viewport={"width": 414, "height": 896}, user_agent=UA_M,
+                is_mobile=True, has_touch=True, locale="zh-CN",
+                device_scale_factor=3,
+                args=["--disable-blink-features=AutomationControlled"])
+        except Exception as e:
+            print("[!] 启动 Edge 失败: %s" % e)
+            print("[!] 请确认本机已安装 Microsoft Edge。")
+            return 4
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             page.goto("https://m.jd.com", wait_until="domcontentloaded", timeout=20000)
