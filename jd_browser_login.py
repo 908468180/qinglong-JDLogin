@@ -8,11 +8,11 @@
     setx JD_QL_PASSWORD "<密码>"
     python jd_browser_login.py
 
-弹出的 Edge 窗口中用手机号+短信验证码登录 m.jd.com，脚本自动提取
-pt_key/pt_pin、校验有效性并写入青龙环境变量 JD_COOKIE。
+运行即弹出 Edge 窗口（手机视图 m.jd.com 登录页），用手机号+短信验证码
+登录后，脚本自动提取 pt_key/pt_pin 并写入青龙环境变量 JD_COOKIE。
 
-登录态保存在 JD_EDGE_PROFILE 目录（默认 %LOCALAPPDATA%\\JDLogin\\edge_profile），
-实测 pt_key 有效期约一年；续期时通常无需重新登录，脚本几秒内自动完成。
+每次运行都会清除旧登录态、重新登录（实测 pt_key 有效期约一年，通常很久
+才需要跑一次）。
 """
 import json
 import os
@@ -32,9 +32,6 @@ PROFILE = os.environ.get("JD_EDGE_PROFILE") or os.path.join(
 
 UA_M = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
         "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
-UA_PC = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-ME_API = "https://me-api.jd.com/user_new/info/GetJDUserInfoUnion"
 
 
 def require_config():
@@ -66,20 +63,6 @@ def req(method, url, payload=None, token=None, timeout=30):
 def ql_login():
     return req("POST", QL + "/api/user/login",
                {"username": QL_USER, "password": QL_PASS})["data"]["token"]
-
-
-def verify_pt(pt_key, pt_pin):
-    ck = "pt_key=%s;pt_pin=%s;" % (pt_key, pt_pin)
-    try:
-        r = urllib.request.Request(ME_API, headers={
-            "Cookie": ck, "User-Agent": UA_PC, "Accept": "application/json"})
-        with urllib.request.urlopen(r, timeout=15) as resp:
-            j = json.loads(resp.read())
-        if str(j.get("retcode")) == "0":
-            return True, "ok"
-        return False, j.get("msg") or ("retcode=%s" % j.get("retcode"))
-    except Exception as e:
-        return None, "%s: %s" % (type(e).__name__, e)
 
 
 def write_ql(ck):
@@ -123,7 +106,7 @@ def main():
     except ImportError:
         print("[!] 未安装 playwright（pip install playwright）。")
         print("[!] 本脚本需在 Windows 电脑上运行；青龙容器内没有浏览器，")
-        print("[!] 请勿在青龙中运行此脚本，容器内请使用 jd_cookie_check.py。")
+        print("[!] 请勿在青龙中运行此脚本。")
         return 3
 
     print("[*] 启动 Edge（手机视图）... 打开 https://m.jd.com")
@@ -140,36 +123,44 @@ def main():
             print("[!] 启动 Edge 失败: %s" % e)
             print("[!] 请确认本机已安装 Microsoft Edge。")
             return 4
+
+        # 清除旧登录态，确保每次都进入登录页
+        try:
+            ctx.clear_cookies()
+        except Exception:
+            pass
+
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             page.goto("https://m.jd.com", wait_until="domcontentloaded", timeout=20000)
         except Exception as e:
             print("[!] 打开页面:", e)
+        try:
+            page.get_by_text("登录", exact=False).first.click(timeout=8000)
+            print("[*] 已打开登录页")
+        except Exception:
+            print("[!] 请在窗口中点击“登录”")
 
-        print("[!] 如需登录，请在窗口中用手机号+短信验证码登录 m.jd.com。")
-        print("[*] 脚本轮询 pt_key/pt_pin，有效则自动写入青龙。超时 15 分钟。")
+        print("[!] 请用手机号+短信验证码登录，成功后自动写入青龙。超时 15 分钟。")
         deadline = time.time() + 900
-        seen = None
+        failed_once = False
         while time.time() < deadline:
             if ctx.is_closed():
                 print("[!] 浏览器已关闭，未拿到 cookie。")
                 return 1
             pair = extract_pair(ctx.cookies())
-            if pair and pair != seen:
-                ok, msg = verify_pt(*pair)
-                if ok:
-                    if write_ql("pt_key=%s;pt_pin=%s;" % pair):
-                        print("[+] 已写入青龙 JD_COOKIE 并回读确认。")
-                        print("[+] pt_pin=%s  pt_key=%s..." % (pair[1], pair[0][:24]))
-                        time.sleep(3)
-                        ctx.close()
-                        return 0
-                    print("[!] 青龙写入失败，请检查 JD_QL_* 配置。")
-                elif ok is False:
-                    print("[!] 捕获到 cookie 但无效(%s)，请在窗口中重新登录..." % msg)
-                else:
-                    print("[!] 校验失败(网络): %s，重试中..." % msg)
-                seen = pair
+            if pair:
+                if write_ql("pt_key=%s;pt_pin=%s;" % pair):
+                    print("[+] 已写入青龙 JD_COOKIE 并回读确认。")
+                    print("[+] pt_pin=%s  pt_key=%s..." % (pair[1], pair[0][:24]))
+                    time.sleep(3)
+                    ctx.close()
+                    return 0
+                if not failed_once:
+                    print("[!] 青龙写入失败，请检查 JD_QL_* 配置，重试中...")
+                    failed_once = True
+                time.sleep(10)
+                continue
             time.sleep(2)
         print("[!] 超时未完成登录。")
         ctx.close()
